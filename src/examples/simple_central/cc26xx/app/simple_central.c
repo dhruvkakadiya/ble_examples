@@ -172,7 +172,8 @@
 #define DEFAULT_SVC_DISCOVERY_DELAY           1000
 
 // TRUE to filter discovery results on desired service UUID
-#define DEFAULT_DEV_DISC_BY_SVC_UUID          TRUE
+// FALSE to discover all
+#define DEFAULT_DEV_DISC_BY_SVC_UUID          FALSE
 
 // Length of bd addr as a string
 #define B_ADDR_STR_LEN                        15
@@ -267,6 +268,8 @@ typedef struct
  * GLOBAL VARIABLES
  */
 
+const char *AdvTypeStrings[] = {"Connectable undirected","Connectable directed", "Scannable undirected", "Non-connectable undirected", "Scan response"};
+
 // Display Interface
 Display_Handle dispHandle = NULL;
 
@@ -307,6 +310,13 @@ static const uint8_t attDeviceName[GAP_DEVICE_NAME_LEN] = "Simple BLE Central";
 // Number of scan results and scan result index
 static uint8_t scanRes;
 static uint8_t scanIdx;
+
+// To save index of filtered device
+static uint8_t final_device_index;
+
+// Final device addr and addrType
+static uint8_t final_connected_device_addr[B_ADDR_LEN];
+static uint8_t final_connected_device_addr_type;
 
 // Scan result list
 static devRecInfo_t devList[DEFAULT_MAX_SCAN_RES];
@@ -395,6 +405,8 @@ void SimpleBLECentral_readRssiHandler(UArg a0);
 
 static uint8_t SimpleBLECentral_enqueueMsg(uint8_t event, uint8_t status,
                                            uint8_t *pData);
+
+char *Util_convertBytes2Str(uint8_t *pData, uint8_t length);
 
 /*********************************************************************
  * PROFILE CALLBACKS
@@ -757,31 +769,57 @@ static void SimpleBLECentral_processRoleEvent(gapCentralRoleEvent_t *pEvent)
 
     case GAP_DEVICE_INFO_EVENT:
       {
+    	  //Print scan response data otherwise advertising data
+		  if(pEvent->deviceInfo.eventType == GAP_ADRPT_SCAN_RSP)
+		  {
+			//uint64_t scanAddr = (pEvent->deviceInfo.addr[0]|pEvent->deviceInfo.addr[1]<<8|pEvent->deviceInfo.addr[2]<<16|pEvent->deviceInfo.addr[3]<<24|pEvent->deviceInfo.addr[4]<<32|pEvent->deviceInfo.addr[5]<<40);
+			if(pEvent->deviceInfo.addr[5] == 0x24)
+			{
+				//memcpy(pEvent->deviceInfo.addr,final_connected_device_addr,B_ADDR_LEN*sizeof(uint8_t));
+				//final_connected_device_addr_type = pEvent->deviceInfo.addrType;
+				Display_print1(dispHandle, ROW_TWO, 0, "Scan Response Addr: %s", Util_convertBdAddr2Str(pEvent->deviceInfo.addr));
+				Display_print1(dispHandle, ROW_THREE, 0, "Scan Response Data: %s", Util_convertBytes2Str(pEvent->deviceInfo.pEvtData, pEvent->deviceInfo.dataLen));
+			}
+		  }
+		  else
+		  {
+			//uint64_t advertAddr = (pEvent->deviceInfo.addr[0]|pEvent->deviceInfo.addr[1]<<8|pEvent->deviceInfo.addr[2]<<16|pEvent->deviceInfo.addr[3]<<24|pEvent->deviceInfo.addr[4]<<32|pEvent->deviceInfo.addr[5]<<40);
+			if(pEvent->deviceInfo.addr[5] == 0x24)
+			{
+				//deviceInfoCnt++;
+				Display_print2(dispHandle, ROW_FOUR, 0, "Advertising Addr: %s Advertising Type: %s", Util_convertBdAddr2Str(pEvent->deviceInfo.addr), AdvTypeStrings[pEvent->deviceInfo.eventType]);
+				Display_print1(dispHandle, ROW_FIVE, 0, "Advertising Data: %s", Util_convertBytes2Str(pEvent->deviceInfo.pEvtData, pEvent->deviceInfo.dataLen));
+			}
+		  }
+
     	  //Find peer device address by UUID
 		if ( (DEFAULT_DEV_DISC_BY_SVC_UUID == FALSE) ||
 			SimpleBLECentral_findSvcUuid(SIMPLEPROFILE_SERV_UUID,
                                          pEvent->deviceInfo.pEvtData,
-                                         pEvent->deviceInfo.dataLen))
+                                         pEvent->deviceInfo.dataLen) && pEvent->deviceInfo.addr[5] == 0x24)
 		{
 			SimpleBLECentral_addDeviceInfo(pEvent->deviceInfo.addr,
                                            pEvent->deviceInfo.addrType);
 		}
 
-	    // Check if the discovered device is already in scan results
-		uint8_t i;
-	    for (i = 0; i < scanRes; i++)
-	    {
-	      if (memcmp(pEvent->deviceInfo.addr, devList[i].addr , B_ADDR_LEN) == 0)
-	      {
-	    	  //Check if pEventData contains a device name
-	    	  if (SimpleBLECentral_findLocalName(pEvent->deviceInfo.pEvtData,
-	    			  	  	     	 	 	 	 pEvent->deviceInfo.dataLen))
-	    	  {
-	    		  //Update deviceInfo entry with the name
-	    		  SimpleBLECentral_addDeviceName(i, pEvent->deviceInfo.pEvtData,
-	    				  	  	  	  	  	  	  	pEvent->deviceInfo.dataLen);
-	    	  }
-	      }
+		if(pEvent->deviceInfo.addr[5] == 0x24)
+		{
+			// Check if the discovered device is already in scan results
+			uint8_t i;
+			for (i = 0; i < scanRes; i++)
+			{
+			  if (memcmp(pEvent->deviceInfo.addr, devList[i].addr , B_ADDR_LEN) == 0)
+			  {
+				  //Check if pEventData contains a device name
+				  if (SimpleBLECentral_findLocalName(pEvent->deviceInfo.pEvtData,
+													 pEvent->deviceInfo.dataLen))
+				  {
+					  //Update deviceInfo entry with the name
+					  SimpleBLECentral_addDeviceName(i, pEvent->deviceInfo.pEvtData,
+														pEvent->deviceInfo.dataLen);
+				  }
+			  }
+			}
 	    }
       }
       break;
@@ -792,7 +830,7 @@ static void SimpleBLECentral_processRoleEvent(gapCentralRoleEvent_t *pEvent)
         scanningStarted = FALSE;
         // initialize scan index to first
         scanIdx = 0;
-        Display_clearLines(dispHandle, ROW_ONE, ROW_SEVEN);
+        //Display_clearLines(dispHandle, ROW_ONE, ROW_SEVEN);
         Display_print1(dispHandle, ROW_ONE, 0, "Devices found %d", scanRes);
         state = BLE_STATE_DISCOVERED;
 
@@ -994,9 +1032,14 @@ static void SimpleBLECentral_handleKeys(uint8_t shift, uint8_t keys)
 					uint8_t *peerAddr;
 					if (scanRes > 0 && state == BLE_STATE_BROWSING)
 					{
+						// connect to filtered final device
+						//peerAddr = final_connected_device_addr;
+						//addrType = final_connected_device_addr_type;
+						peerAddr = devList[final_device_index].addr;
+						addrType = devList[final_device_index].addrType;
 						// connect to current device in scan result
-						peerAddr = devList[scanIdx-1].addr;
-						addrType = devList[scanIdx-1].addrType;
+						//peerAddr = devList[scanIdx-1].addr;
+						//addrType = devList[scanIdx-1].addrType;
 
 						state = BLE_STATE_CONNECTING;
 
@@ -1726,6 +1769,12 @@ static void SimpleBLECentral_addDeviceInfo(uint8_t *pAddr, uint8_t addrType)
 		memcpy(devList[scanRes].addr, pAddr, B_ADDR_LEN);
 		devList[scanRes].addrType = addrType;
 
+		// Save filtered final device index
+		if(devList[scanRes].addr[5] == 0x24)
+		{
+			final_device_index = scanRes;
+		}
+
 		// Increment scan result count
 		scanRes++;
 	}
@@ -1977,3 +2026,35 @@ static uint8_t SimpleBLECentral_enqueueMsg(uint8_t event, uint8_t status,
 	}
 	return FALSE;
 }
+
+/*********************************************************************
+ * @fn      Util_convertBytes2Str
+ *
+ * @brief   Convert bytes to string. Used to print advertising data.
+ *
+ *
+ * @param   pData - data
+ *
+ * @return  Adv/Scan data as a string
+ */
+char *Util_convertBytes2Str(uint8_t *pData, uint8_t length)
+{
+  uint8_t     charCnt;
+  char        hex[] = "0123456789ABCDEF";
+  static char str[(3*31)+1];
+  char        *pStr = str;
+
+  //*pStr++ = '0';
+  //*pStr++ = 'x';
+
+  for (charCnt = 0; charCnt < length; charCnt++)
+  {
+    *pStr++ = hex[*pData >> 4];
+    *pStr++ = hex[*pData++ & 0x0F];
+    *pStr++ = ':';
+  }
+  pStr = NULL;
+
+  return str;
+}
+

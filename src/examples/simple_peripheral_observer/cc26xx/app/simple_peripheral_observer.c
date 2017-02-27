@@ -767,15 +767,25 @@ static void SimpleBLEPeripheralObserver_processRoleEvent(gapPeripheralObserverRo
       {
         //Print scan response data otherwise advertising data
         if(pEvent->deviceInfo.eventType == GAP_ADRPT_SCAN_RSP)
-        {         
-          Display_print1(dispHandle, 4, 0, "Scan Response Addr: %s", Util_convertBdAddr2Str(pEvent->deviceInfo.addr));
-          Display_print1(dispHandle, 5, 0, "Scan Response Data: %s", Util_convertBytes2Str(pEvent->deviceInfo.pEvtData, pEvent->deviceInfo.dataLen));
+        {
+        	//uint64_t scanAddr = (pEvent->deviceInfo.addr[0]|pEvent->deviceInfo.addr[1]<<8|pEvent->deviceInfo.addr[2]<<16|pEvent->deviceInfo.addr[3]<<24|pEvent->deviceInfo.addr[4]<<32|pEvent->deviceInfo.addr[5]<<40);
+        	if(pEvent->deviceInfo.addr[5] == 0x24)
+        	{
+        		Display_print1(dispHandle, 4, 0, "Scan Response Addr: %s", Util_convertBdAddr2Str(pEvent->deviceInfo.addr));
+        		Display_print1(dispHandle, 5, 0, "Scan Response Data: %s", Util_convertBytes2Str(pEvent->deviceInfo.pEvtData, pEvent->deviceInfo.dataLen));
+        	}
+
         }
         else
         {
-          deviceInfoCnt++;
-          Display_print2(dispHandle, 6, 0, "Advertising Addr: %s Advertising Type: %s", Util_convertBdAddr2Str(pEvent->deviceInfo.addr), AdvTypeStrings[pEvent->deviceInfo.eventType]);
-          Display_print1(dispHandle, 7, 0, "Advertising Data: %s", Util_convertBytes2Str(pEvent->deviceInfo.pEvtData, pEvent->deviceInfo.dataLen));
+        	//uint64_t advertAddr = (pEvent->deviceInfo.addr[0]|pEvent->deviceInfo.addr[1]<<8|pEvent->deviceInfo.addr[2]<<16|pEvent->deviceInfo.addr[3]<<24|pEvent->deviceInfo.addr[4]<<32|pEvent->deviceInfo.addr[5]<<40);
+        	if(pEvent->deviceInfo.addr[5] == 0x24)
+        	{
+        		deviceInfoCnt++;
+        		Display_print2(dispHandle, 6, 0, "Advertising Addr: %s Advertising Type: %s", Util_convertBdAddr2Str(pEvent->deviceInfo.addr), AdvTypeStrings[pEvent->deviceInfo.eventType]);
+        		Display_print1(dispHandle, 7, 0, "Advertising Data: %s", Util_convertBytes2Str(pEvent->deviceInfo.pEvtData, pEvent->deviceInfo.dataLen));
+
+        	}
         }
         
         ICall_free(pEvent->deviceInfo.pEvtData);
